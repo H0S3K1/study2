@@ -1,18 +1,19 @@
 package handler
 
 import (
-	"cloud.google.com/go/firestore"
 	"encoding/json"
-	"github.com/go-playground/validator/v10"
-	"google.golang.org/api/iterator"
 	"log"
 	"net/http"
 	"study2/internal/models" // Nhớ check lại đường dẫn import của ông
+
+	"cloud.google.com/go/firestore"
+	"github.com/go-playground/validator/v10"
+	"google.golang.org/api/iterator"
 )
 
 var validate = validator.New()
 
-func (h *AppHandler) GetProductByFillter(w http.ResponseWriter, r *http.Request) {
+func (h *AppHandler) GetProductsByFilter(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	var payload models.ProductFilter
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {

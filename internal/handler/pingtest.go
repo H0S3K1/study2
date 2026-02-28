@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"study2/internal/models" // Nhớ check lại đường dẫn import của ông
+	"study2/internal/models"
+	"study2/internal/utils"
+
 	"google.golang.org/api/iterator"
 )
 
@@ -15,7 +17,7 @@ import (
 func (h *AppHandler) GetProductHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	var products []models.Product
-    
+
 	// 3. Sử dụng h.DB thay vì biến client vô danh
 	iter := h.DB.Collection("products").Documents(r.Context())
 
@@ -25,7 +27,7 @@ func (h *AppHandler) GetProductHandler(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			utils.SendJSONError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -35,10 +37,10 @@ func (h *AppHandler) GetProductHandler(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		p.ID = doc.Ref.ID
-		data,_ := json.MarshalIndent(p,""," ")
+		data, _ := json.MarshalIndent(p, "", " ")
 		log.Printf("Lấy được product: %s", string(data))
 		products = append(products, p)
 	}
 
-	json.NewEncoder(w).Encode(products)
+	utils.SendJSONSuccess(w, products, http.StatusOK)
 }

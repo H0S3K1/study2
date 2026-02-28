@@ -6,15 +6,39 @@ import (
 	"fmt"
 	"net/http"
 	"study2/internal/models"
+	"study2/internal/utils"
 	"time"
 )
-
 
 // helper function gửi json lỗi
 func sendJSONError(w http.ResponseWriter, message string, statusCode int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	json.NewEncoder(w).Encode(map[string]string{"error": message})
+}
+
+// Helper để gọi Firebase Authentication REST API
+func callFirebaseREST(w http.ResponseWriter, url string, payload map[string]interface{}, successResp interface{}, errorMsg string) bool {
+	payloadBytes, _ := json.Marshal(payload)
+
+	resp, err := http.Post(url, "application/json", bytes.NewBuffer(payloadBytes))
+	if err != nil {
+		utils.SendJSONError(w, "Không kết nối được với Firebase Authentication", http.StatusInternalServerError)
+		return false
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		utils.SendJSONError(w, errorMsg, http.StatusUnauthorized)
+		return false
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(successResp); err != nil {
+		utils.SendJSONError(w, "Lỗi đọc dữ liệu từ Firebase", http.StatusInternalServerError)
+		return false
+	}
+
+	return true
 }
 
 // LoginHandler xử lý việc đăng nhập của user thông qua Firebase REST API
@@ -41,27 +65,11 @@ func (h *AppHandler) LoginHandler(w http.ResponseWriter, r *http.Request) {
 		"password":          req.Password,
 		"returnSecureToken": true, // Quan trọng: Yêu cầu Firebase trả về JWT Token thật
 	}
-	payloadBytes, _ := json.Marshal(payload)
 
-	// 4. Gửi HTTP POST Request sang Google
-	resp, err := http.Post(firebaseURL, "application/json", bytes.NewBuffer(payloadBytes))
-	if err != nil {
-		sendJSONError(w, "Không kết nối được với Firebase Authentication", http.StatusInternalServerError)
-		return
-	}
-	defer resp.Body.Close()
-
-	// 5. Kiểm tra nếu Firebase báo lỗi (sai password, sai email, v.v)
-	if resp.StatusCode != http.StatusOK {
-		sendJSONError(w, "Sai email hoặc mật khẩu", http.StatusUnauthorized)
-		return
-	}
-
-	// 6. Request thành công -> Parse kết quả và trả thẳng Token cho Client
+	// 4. Gửi HTTP POST Request sang Google và xử lý kết quả
 	var loginResp models.LoginResponse
-	if err := json.NewDecoder(resp.Body).Decode(&loginResp); err != nil {
-		sendJSONError(w, "Lỗi đọc Token từ Firebase", http.StatusInternalServerError)
-		return
+	if !callFirebaseREST(w, signInURL, payload, &loginResp, "Sai email hoặc mật khẩu") {
+		return // Lỗi đã được xử lý trong helper
 	}
 
 	w.WriteHeader(http.StatusOK)
@@ -92,32 +100,16 @@ func (h *AppHandler) RegisterHandler(w http.ResponseWriter, r *http.Request) {
 		"password":          req.Password,
 		"returnSecureToken": true, // Yêu cầu trả về token luôn sau khi đăng ký thành công
 	}
-	payloadBytes, _ := json.Marshal(payload)
 
-	// 4. Gửi HTTP POST Request sang Google
-	resp, err := http.Post(firebaseURL, "application/json", bytes.NewBuffer(payloadBytes))
-	if err != nil {
-		sendJSONError(w, "Không kết nối được với Firebase Authentication", http.StatusInternalServerError)
-		return
-	}
-	defer resp.Body.Close()
-
-	// 5. Kiểm tra nếu Firebase báo lỗi (ví dụ: email đã tồn tại)
-	if resp.StatusCode != http.StatusOK {
-		sendJSONError(w, "Đăng ký thất bại (có thể email đã được sử dụng)", http.StatusBadRequest)
-		return
-	}
-
-	// 6. Request thành công -> Parse kết quả trả về
+	// 4. Gửi HTTP POST Request sang Google và xử lý phản hồi
 	var regResp models.RegisterResponse
-	if err := json.NewDecoder(resp.Body).Decode(&regResp); err != nil {
-		sendJSONError(w, "Đăng ký thành công nhưng gặp lỗi khi đọc thông tin phản hồi", http.StatusInternalServerError)
+	if !callFirebaseREST(w, signUpURL, payload, &regResp, "Đăng ký thất bại (có thể email đã được sử dụng)") {
 		return
 	}
 
-	// 7. Lưu user profile (Filing Cabinet) vào Firestore!
+	// 5. Lưu user profile (Filing Cabinet) vào Firestore!
 	// Dùng LocalID (chính là UID của Firebase Auth) làm Document ID
-	_, err = h.DB.Collection("users").Doc(regResp.LocalID).Set(r.Context(), map[string]interface{}{
+	_, err := h.DB.Collection("users").Doc(regResp.LocalID).Set(r.Context(), map[string]interface{}{
 		"email":      regResp.Email,
 		"created_at": time.Now(),
 		"role":       "customer", // Mặc định ai đăng ký cũng là customer
@@ -176,26 +168,9 @@ func (h *AppHandler) EditProfileHandler(w http.ResponseWriter, r *http.Request) 
 		payload["password"] = req.Password
 	}
 
-	payloadBytes, _ := json.Marshal(payload)
-
-	// 5. Gửi HTTP POST Request sang Google
-	resp, err := http.Post(firebaseURL, "application/json", bytes.NewBuffer(payloadBytes))
-	if err != nil {
-		sendJSONError(w, "Không kết nối được với Firebase Authentication", http.StatusInternalServerError)
-		return
-	}
-	defer resp.Body.Close()
-
-	// 6. Kiểm tra nếu Firebase báo lỗi
-	if resp.StatusCode != http.StatusOK {
-		sendJSONError(w, "Thay đổi thất bại (token có thể đã hết hạn hoặc email đã được dùng)", http.StatusBadRequest)
-		return
-	}
-
-	// 7. Request thành công -> Parse kết quả và trả token mới về (vì đổi email/pass xong token có thể được cấp lại)
+	// 5. Gọi HTTP POST Request sang Google
 	var updateResp models.RegisterResponse // Dùng chung struct với register cho kết quả update
-	if err := json.NewDecoder(resp.Body).Decode(&updateResp); err != nil {
-		sendJSONError(w, "Cập nhật thành công nhưng gặp lỗi đọc phản hồi", http.StatusInternalServerError)
+	if !callFirebaseREST(w, updateURL, payload, &updateResp, "Thay đổi thất bại (token có thể đã hết hạn hoặc email đã được dùng)") {
 		return
 	}
 
