@@ -11,11 +11,7 @@ import (
 )
 
 // helper function gửi json lỗi
-func sendJSONError(w http.ResponseWriter, message string, statusCode int) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(map[string]string{"error": message})
-}
+var sendJSONError = utils.SendJSONError
 
 // Helper để gọi Firebase Authentication REST API
 func callFirebaseREST(w http.ResponseWriter, url string, payload map[string]interface{}, successResp interface{}, errorMsg string) bool {
@@ -53,7 +49,7 @@ func (h *AppHandler) LoginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 2. Validate request (kiểm tra định dạng email, độ dài password)
-	if err := validate.Struct(req); err != nil {
+	if err := utils.Validate.Struct(req); err != nil {
 		sendJSONError(w, "Vui lòng nhập Email và Password hợp lệ", http.StatusBadRequest)
 		return
 	}
@@ -88,7 +84,7 @@ func (h *AppHandler) RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 2. Validate request (kiểm tra định dạng email, độ dài password >= 6)
-	if err := validate.Struct(req); err != nil {
+	if err := utils.Validate.Struct(req); err != nil {
 		sendJSONError(w, "Vui lòng cung cấp Email hợp lệ và mật khẩu ít nhất 6 ký tự", http.StatusBadRequest)
 		return
 	}
@@ -142,7 +138,7 @@ func (h *AppHandler) EditProfileHandler(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// 3. Validate request
-	if err := validate.Struct(req); err != nil {
+	if err := utils.Validate.Struct(req); err != nil {
 		sendJSONError(w, "Dữ liệu không hợp lệ", http.StatusBadRequest)
 		return
 	}
@@ -226,7 +222,7 @@ func (h *AppHandler) UpdateProfileHandler(w http.ResponseWriter, r *http.Request
 		sendJSONError(w, "Lỗi cú pháp JSON", http.StatusBadRequest)
 		return
 	}
-	if err := validate.Struct(req); err != nil {
+	if err := utils.Validate.Struct(req); err != nil {
 		sendJSONError(w, "Dữ liệu không hợp lệ", http.StatusBadRequest)
 		return
 	}

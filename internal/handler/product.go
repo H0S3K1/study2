@@ -5,23 +5,21 @@ import (
 	"log"
 	"net/http"
 	"study2/internal/models" // Nhớ check lại đường dẫn import của ông
+	"study2/internal/utils"
 
 	"cloud.google.com/go/firestore"
-	"github.com/go-playground/validator/v10"
 	"google.golang.org/api/iterator"
 )
-
-var validate = validator.New()
 
 func (h *AppHandler) GetProductsByFilter(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	var payload models.ProductFilter
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		http.Error(w, "Lỗi cú pháp JSON", http.StatusBadRequest)
+		utils.SendJSONError(w, "Lỗi cú pháp JSON", http.StatusBadRequest)
 		return
 	}
-	if err := validate.Struct(payload); err != nil {
-		http.Error(w, "Lỗi cú pháp JSON", http.StatusBadRequest)
+	if err := utils.Validate.Struct(payload); err != nil {
+		utils.SendJSONError(w, "Lỗi cú pháp JSON", http.StatusBadRequest)
 		return
 	}
 	// Pagination
