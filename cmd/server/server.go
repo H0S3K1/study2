@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"os"
 	"net/http"
 	"study2/internal/db"
 	"study2/internal/handler" // Import cái package handler ông vừa tạo
@@ -14,7 +15,7 @@ func main() {
 	if err := godotenv.Load(); err != nil {
 		log.Println("Không tìm thấy file .env, load biến môi trường hệ thống")
 	}
-
+	handler.FirebaseAPIKey = os.Getenv("FIREBASE_API_KEY")
 	// 1. Khởi tạo kết nối duy nhất (Singleton)
 	client, firebaseApp, err := db.InitFirestore()
 	if err != nil {

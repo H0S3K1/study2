@@ -1,11 +1,9 @@
 package handler
 
 import (
-	"fmt"
 	"net/http"
 	"os"
 	"study2/internal/middleware"
-
 	"cloud.google.com/go/firestore"
 	firebase "firebase.google.com/go/v4"
 )
@@ -17,11 +15,7 @@ type AppHandler struct {
 }
 
 var frMA = firestore.MergeAll
-var firebaseAPIKey = os.Getenv("FIREBASE_API_KEY")
-
-var signInURL = fmt.Sprintf("https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=%s", firebaseAPIKey)
-var signUpURL = fmt.Sprintf("https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=%s", firebaseAPIKey)
-var updateURL = fmt.Sprintf("https://identitytoolkit.googleapis.com/v1/accounts:update?key=%s", firebaseAPIKey)
+var FirebaseAPIKey = os.Getenv("FIREBASE_API_KEY")
 
 // Hàm này là "Sổ hộ khẩu" - Gom hết API vào đây
 func (h *AppHandler) RegisterRoutes(mux *http.ServeMux) {

@@ -13,6 +13,16 @@ import (
 // helper function gửi json lỗi
 var sendJSONError = utils.SendJSONError
 
+func signInURL() string {
+	return fmt.Sprintf("https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=%s", FirebaseAPIKey)
+}
+func signUpURL() string {
+	return fmt.Sprintf("https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=%s", FirebaseAPIKey)
+}
+func updateURL() string {
+	return fmt.Sprintf("https://identitytoolkit.googleapis.com/v1/accounts:update?key=%s", FirebaseAPIKey)
+}
+
 // Helper để gọi Firebase Authentication REST API
 func callFirebaseREST(w http.ResponseWriter, url string, payload map[string]interface{}, successResp interface{}, errorMsg string) bool {
 	payloadBytes, _ := json.Marshal(payload)
@@ -64,7 +74,7 @@ func (h *AppHandler) LoginHandler(w http.ResponseWriter, r *http.Request) {
 
 	// 4. Gửi HTTP POST Request sang Google và xử lý kết quả
 	var loginResp models.LoginResponse
-	if !callFirebaseREST(w, signInURL, payload, &loginResp, "Sai email hoặc mật khẩu") {
+	if !callFirebaseREST(w, signInURL(), payload, &loginResp, "Sai email hoặc mật khẩu") {
 		return // Lỗi đã được xử lý trong helper
 	}
 
@@ -99,7 +109,7 @@ func (h *AppHandler) RegisterHandler(w http.ResponseWriter, r *http.Request) {
 
 	// 4. Gửi HTTP POST Request sang Google và xử lý phản hồi
 	var regResp models.RegisterResponse
-	if !callFirebaseREST(w, signUpURL, payload, &regResp, "Đăng ký thất bại (có thể email đã được sử dụng)") {
+	if !callFirebaseREST(w, signUpURL(), payload, &regResp, "Đăng ký thất bại (có thể email đã được sử dụng)") {
 		return
 	}
 
@@ -166,7 +176,7 @@ func (h *AppHandler) EditProfileHandler(w http.ResponseWriter, r *http.Request) 
 
 	// 5. Gọi HTTP POST Request sang Google
 	var updateResp models.RegisterResponse // Dùng chung struct với register cho kết quả update
-	if !callFirebaseREST(w, updateURL, payload, &updateResp, "Thay đổi thất bại (token có thể đã hết hạn hoặc email đã được dùng)") {
+	if !callFirebaseREST(w, updateURL(), payload, &updateResp, "Thay đổi thất bại (token có thể đã hết hạn hoặc email đã được dùng)") {
 		return
 	}
 
