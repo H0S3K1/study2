@@ -1,12 +1,12 @@
 package handler
 
 import (
-	"encoding/json"
 	"log"
 	"net/http"
 	"study2/internal/models"
 	"study2/internal/utils"
 
+	"cloud.google.com/go/firestore"
 	"google.golang.org/api/iterator"
 )
 
@@ -18,8 +18,20 @@ func (h *AppHandler) GetProductHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	var products []models.Product
 
+	limit := 20
+	lastDocID := r.URL.Query().Get("lastDocID")
+
+	q := h.DB.Collection("products").OrderBy("price", firestore.Asc).Limit(limit)
+
+	if lastDocID != "" {
+		docSnap, err := h.DB.Collection("products").Doc(lastDocID).Get(r.Context())
+		if err == nil {
+			q = q.StartAfter(docSnap)
+		}
+	}
+
 	// 3. Sử dụng h.DB thay vì biến client vô danh
-	iter := h.DB.Collection("products").Documents(r.Context())
+	iter := q.Documents(r.Context())
 
 	for {
 		doc, err := iter.Next()
@@ -37,8 +49,6 @@ func (h *AppHandler) GetProductHandler(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		p.ID = doc.Ref.ID
-		data, _ := json.MarshalIndent(p, "", " ")
-		log.Printf("Lấy được product: %s", string(data))
 		products = append(products, p)
 	}
 

@@ -1,12 +1,13 @@
 package models
 
 type Product struct {
-	ID    string  `json:"id"`
-	Brand string  `json:"brand"`
-	CPU   string  `json:"cpu"`
-	Name  string  `json:"name"`
-	Price float64 `json:"price"`
-	Type  string  `json:"type"`
+	ID    string   `json:"id"`
+	Brand string   `json:"brand"`
+	CPU   string   `json:"cpu"`
+	Name  string   `json:"name"`
+	Images []string `json:"images"`
+	Price float64  `json:"price"`
+	Type  string   `json:"type"`
 }
 
 type PingType struct {

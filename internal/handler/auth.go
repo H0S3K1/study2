@@ -285,3 +285,11 @@ func (h *AppHandler) UpdateProfileHandler(w http.ResponseWriter, r *http.Request
 		"message": "Cập nhật hồ sơ thành công",
 	})
 }
+
+// LogoutHandler xử lý logout bằng cách yêu cầu client xóa token
+func (h *AppHandler) LogoutHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	utils.SendJSONSuccess(w, map[string]string{
+		"message": "Đăng xuất thành công. Client vui lòng xóa token hiện tại.",
+	}, http.StatusOK)
+}

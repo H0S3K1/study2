@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"os"
 	"study2/internal/middleware"
+
 	"cloud.google.com/go/firestore"
 	firebase "firebase.google.com/go/v4"
 )
@@ -34,4 +35,5 @@ func (h *AppHandler) RegisterRoutes(mux *http.ServeMux) {
 	protected("PUT /profile", h.EditProfileHandler)
 	protected("GET /profile", h.GetProfileHandler)
 	protected("POST /profile/update", h.UpdateProfileHandler)
+	protected("POST /logout", h.LogoutHandler)
 }
