@@ -253,9 +253,20 @@ func (h *AppHandler) UpdateProfileHandler(w http.ResponseWriter, r *http.Request
 
 	// Helper logic to compare and add to update map
 	compareAndAdd := func(field string, newValue interface{}) {
+		// Bỏ qua giá trị zero (empty string hoặc 0) nếu đang update
+		switch v := newValue.(type) {
+		case string:
+			if v == "" {
+				return
+			}
+		case int:
+			if v == 0 {
+				return
+			}
+		}
 
-		// Compare logic
-		if oldValue, ok := currentData[field]; ok && oldValue != newValue {
+		oldValue, exists := currentData[field]
+		if !exists || oldValue != newValue {
 			hasChanges = true
 			updates[field] = newValue
 		}
