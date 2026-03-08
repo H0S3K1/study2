@@ -1,13 +1,13 @@
 package models
 
 type Product struct {
-	ID    string   `json:"id"`
-	Brand string   `json:"brand"`
-	CPU   string   `json:"cpu"`
-	Name  string   `json:"name"`
-	Images []string `json:"images"`
-	Price float64  `json:"price"`
-	Type  string   `json:"type"`
+	ID     string   `json:"id" firestore:"-"`
+	Brand  string   `json:"brand" firestore:"brand"`
+	CPU    string   `json:"cpu" firestore:"cpu"`
+	Name   string   `json:"name" firestore:"name"`
+	Images []string `json:"images" firestore:"images"`
+	Price  float64  `json:"price" firestore:"price"`
+	Type   string   `json:"type" firestore:"type"`
 }
 
 type PingType struct {

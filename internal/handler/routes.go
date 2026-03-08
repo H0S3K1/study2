@@ -36,4 +36,6 @@ func (h *AppHandler) RegisterRoutes(mux *http.ServeMux) {
 	protected("GET /profile", h.GetProfileHandler)
 	protected("POST /profile/update", h.UpdateProfileHandler)
 	protected("POST /logout", h.LogoutHandler)
+	protected("POST /cart/add", h.AddToCart)
 }
+
