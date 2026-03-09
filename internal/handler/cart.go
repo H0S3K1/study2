@@ -17,7 +17,7 @@ func (h *AppHandler) AddToCart(w http.ResponseWriter, r *http.Request) {
 	uid := ctx.Value("user_id").(string)
 
 	// 2. Đọc request body
-	var req models.AddToCartRequest
+	var req models.CartItem
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		utils.SendJSONError(w, "Lỗi cú pháp JSON", http.StatusBadRequest)
 		return
@@ -53,14 +53,9 @@ func (h *AppHandler) AddToCart(w http.ResponseWriter, r *http.Request) {
 		cartItem.Thumbnail = product.Images[0]
 	}
 
-	// 6. Cập nhật giỏ hàng của user
-	userRef := h.DB.Collection("users").Doc(uid)
-	_, err = userRef.Update(r.Context(), []firestore.Update{
-		{
-			Path:  "cart",
-			Value: firestore.ArrayUnion(cartItem),
-		},
-	})
+	// 6. Thêm vào sub-collection "cart" (tự động tạo mới nếu chưa có)
+	cartRef := h.DB.Collection("users").Doc(uid).Collection("cart").Doc(req.ProductID)
+	_, err = cartRef.Set(ctx, cartItem)
 	if err != nil {
 		utils.SendJSONError(w, "Lỗi cập nhật giỏ hàng", http.StatusInternalServerError)
 		return
@@ -68,4 +63,97 @@ func (h *AppHandler) AddToCart(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"message": "Đã thêm sản phẩm vào giỏ hàng"})
+}
+
+func (h *AppHandler) RemoveFromCart(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	ctx := r.Context()
+	uid := ctx.Value("user_id").(string)
+
+	var req models.RemoveFromCartRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		utils.SendJSONError(w, "Lỗi cú pháp JSON", http.StatusBadRequest)
+		return
+	}
+
+	if err := utils.Validate.Struct(req); err != nil {
+		utils.SendJSONError(w, "Dữ liệu không hợp lệ", http.StatusBadRequest)
+		return
+	}
+
+	cartRef := h.DB.Collection("users").Doc(uid).Collection("cart").Doc(req.ProductID)
+	_, err := cartRef.Delete(ctx)
+
+	if err != nil {
+		utils.SendJSONError(w, "Lỗi xóa sản phẩm khỏi giỏ hàng", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"message": "Đã xóa sản phẩm khỏi giỏ hàng"})
+}
+
+func (h *AppHandler) UpdateCart(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	ctx := r.Context()
+	uid := ctx.Value("user_id").(string)
+
+	var req models.AddToCartRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		utils.SendJSONError(w, "Lỗi cú pháp JSON", http.StatusBadRequest)
+		return
+	}
+
+	if err := utils.Validate.Struct(req); err != nil {
+		utils.SendJSONError(w, "Dữ liệu không hợp lệ", http.StatusBadRequest)
+		return
+	}
+
+	cartRef := h.DB.Collection("users").Doc(uid).Collection("cart").Doc(req.ProductID)
+	_, err := cartRef.Update(ctx, []firestore.Update{
+		{
+			Path:  "quantity",
+			Value: req.Quantity,
+		},
+	})
+
+	if err != nil {
+		utils.SendJSONError(w, "Sản phẩm không có trong giỏ hàng hoặc lỗi cập nhật", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"message": "Đã cập nhật số lượng sản phẩm"})
+}
+
+func (h *AppHandler) GetCart(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	ctx := r.Context()
+	uid := ctx.Value("user_id").(string)
+
+	cartRef := h.DB.Collection("users").Doc(uid).Collection("cart")
+	docSnaps, err := cartRef.Documents(ctx).GetAll()
+	if err != nil {
+		utils.SendJSONError(w, "Lỗi khi lấy giỏ hàng", http.StatusInternalServerError)
+		return
+	}
+
+	var cart []models.CartItem
+	for _, snap := range docSnaps {
+		var item models.CartItem
+		if err := snap.DataTo(&item); err != nil {
+			continue
+		}
+		cart = append(cart, item)
+	}
+
+	if cart == nil {
+		cart = []models.CartItem{}
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(cart)
 }

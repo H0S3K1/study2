@@ -12,3 +12,12 @@ type AddToCartRequest struct {
 	ProductID string `json:"product_id" validate:"required"`
 	Quantity  int    `json:"quantity" validate:"required,gt=0"`
 }
+
+type RemoveFromCartRequest struct {
+	ProductID string `json:"product_id" validate:"required"`
+}
+
+type UpdateCartRequest struct {
+	ProductID string `json:"product_id" validate:"required"`
+	Quantity  int    `json:"quantity" validate:"required,gt=0"`
+}
