@@ -78,6 +78,7 @@ func (h *AppHandler) GetProductsByFilter(w http.ResponseWriter, r *http.Request)
 	}
 	json.NewEncoder(w).Encode(products)
 }
+
 func (h *AppHandler) GetProductHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	var products []models.Product
@@ -117,4 +118,31 @@ func (h *AppHandler) GetProductHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	utils.SendJSONSuccess(w, products, http.StatusOK)
+}
+
+func (h *AppHandler) GetProductByIDHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var product models.Product
+
+	// Lấy id từ path parameter (Go 1.22+)
+	id := r.PathValue("id")
+	if id == "" {
+		utils.SendJSONError(w, "Thiếu ID sản phẩm", http.StatusBadRequest)
+		return
+	}
+
+	docSnap, err := h.DB.Collection("products").Doc(id).Get(r.Context())
+	if err != nil {
+		utils.SendJSONError(w, "Không tìm thấy sản phẩm", http.StatusNotFound)
+		return
+	}
+
+	if err := docSnap.DataTo(&product); err != nil {
+		log.Printf("Lỗi map dữ liệu: %v", err)
+		utils.SendJSONError(w, "Lỗi xử lý dữ liệu sản phẩm", http.StatusInternalServerError)
+		return
+	}
+
+	product.ID = docSnap.Ref.ID
+	utils.SendJSONSuccess(w, product, http.StatusOK)
 }
