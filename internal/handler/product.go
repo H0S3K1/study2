@@ -5,6 +5,8 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
+	"study2/internal/db"
 	"study2/internal/models" // Nhớ check lại đường dẫn import của ông
 	"study2/internal/utils"
 
@@ -87,6 +89,20 @@ func (h *AppHandler) GetProductHandler(w http.ResponseWriter, r *http.Request) {
 	limit := 20
 	lastDocID := r.URL.Query().Get("lastDocID")
 
+	// Create a unique cache key for this page
+	cacheKey := "products_page_"
+	if lastDocID != "" {
+		cacheKey += lastDocID
+	} else {
+		cacheKey += "first"
+	}
+
+	// Check the cache
+	if cachedData, found := db.MyCache.Get(cacheKey); found {
+		utils.SendJSONSuccess(w, cachedData, http.StatusOK)
+		return
+	}
+
 	q := h.DB.Collection("products").OrderBy("price", firestore.Asc).Limit(limit)
 
 	if lastDocID != "" {
@@ -118,6 +134,9 @@ func (h *AppHandler) GetProductHandler(w http.ResponseWriter, r *http.Request) {
 		products = append(products, p)
 	}
 
+	// Save to cache before returning
+	db.MyCache.Set(cacheKey, products, 5*time.Minute)
+
 	utils.SendJSONSuccess(w, products, http.StatusOK)
 }
 
@@ -129,6 +148,13 @@ func (h *AppHandler) GetProductByIDHandler(w http.ResponseWriter, r *http.Reques
 	id := r.PathValue("id")
 	if id == "" {
 		utils.SendJSONError(w, "Thiếu ID sản phẩm", http.StatusBadRequest)
+		return
+	}
+
+	// Check cache
+	cacheKey := "product_id_" + id
+	if cachedData, found := db.MyCache.Get(cacheKey); found {
+		utils.SendJSONSuccess(w, cachedData, http.StatusOK)
 		return
 	}
 
@@ -145,6 +171,10 @@ func (h *AppHandler) GetProductByIDHandler(w http.ResponseWriter, r *http.Reques
 	}
 
 	product.ID = docSnap.Ref.ID
+
+	// Save to cache
+	db.MyCache.Set(cacheKey, product, 5*time.Minute)
+
 	utils.SendJSONSuccess(w, product, http.StatusOK)
 }
 func (h *AppHandler) SeachingProd(w http.ResponseWriter, r *http.Request) {
@@ -156,11 +186,17 @@ func (h *AppHandler) SeachingProd(w http.ResponseWriter, r *http.Request) {
 	}
 
 	queryLower := strings.ToLower(query)
-	var products []models.Product
+	cacheKey := "search_" + queryLower
+
+	// Check cache
+	if cachedData, found := db.MyCache.Get(cacheKey); found {
+		utils.SendJSONSuccess(w, cachedData, http.StatusOK)
+		return
+	}
 
 	iter := h.DB.Collection("products").Documents(r.Context())
 	defer iter.Stop()
-
+	var prods []models.Product
 	for {
 		doc, err := iter.Next()
 		if err == iterator.Done {
@@ -180,9 +216,12 @@ func (h *AppHandler) SeachingProd(w http.ResponseWriter, r *http.Request) {
 
 		// Find products where name or brand contains the query constraint
 		if strings.Contains(strings.ToLower(p.Name), queryLower) || strings.Contains(strings.ToLower(p.Brand), queryLower) {
-			products = append(products, p)
+			prods = append(prods, p)
 		}
 	}
 
-	utils.SendJSONSuccess(w, products, http.StatusOK)
+	// Save to cache
+	db.MyCache.Set(cacheKey, prods, 5*time.Minute)
+
+	utils.SendJSONSuccess(w, prods, http.StatusOK)
 }
