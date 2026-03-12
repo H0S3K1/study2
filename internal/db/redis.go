@@ -1,10 +1,22 @@
-
 package db // Thả vào chung folder db của ông
 
 import (
+	"context"
+	"github.com/go-redis/redis/v8"
 	"sync"
 	"time"
 )
+
+var RDB *redis.Client
+var Ctx = context.Background()
+
+func InitRedis() {
+	RDB = redis.NewClient(&redis.Options{
+		Addr:     "localhost:9012", // Address mặc định của Redis
+		Password: "",               // Mặc định không pass
+		DB:       0,                // Database mặc định
+	})
+}
 
 // Cấu trúc 1 item lưu trong RAM
 type CacheItem struct {
@@ -46,7 +58,23 @@ func (c *LocalCache) Get(key string) (interface{}, bool) {
 	// Check xem hết hạn chưa (Ví dụ: lưu 5 phút)
 	if time.Now().UnixNano() > item.ExpiresAt {
 		// Ở hệ thống lớn người ta sẽ tự động xóa, mình đơn giản thì cứ báo false
-		return nil, false 
+		return nil, false
 	}
 	return item.Data, true
+}
+func GetSusgestion (query string) []string {
+	op := &redis.ZRangeBy{
+        Min: "[" + query,
+        Max: "[" + query + "\xff",	
+        Count: 10,
+    }
+    
+    results, _ := RDB.ZRangeByLex(Ctx, "search_suggestions", op).Result()
+    return results
+}
+func AddSuggestion (query string) {
+	RDB.ZAdd(Ctx, "search_suggestions", &redis.Z{
+		Score:  0,
+		Member: query,
+	}).Err()
 }

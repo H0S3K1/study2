@@ -5,10 +5,10 @@ import (
 	"log"
 	"net/http"
 	"strings"
-	"time"
 	"study2/internal/db"
 	"study2/internal/models" // Nhớ check lại đường dẫn import của ông
 	"study2/internal/utils"
+	"time"
 
 	"cloud.google.com/go/firestore"
 	"google.golang.org/api/iterator"
@@ -136,7 +136,7 @@ func (h *AppHandler) GetProductHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Save to cache before returning
 	db.MyCache.Set(cacheKey, products, 5*time.Minute)
-
+	db.AddSuggestion(cacheKey)
 	utils.SendJSONSuccess(w, products, http.StatusOK)
 }
 
@@ -179,14 +179,13 @@ func (h *AppHandler) GetProductByIDHandler(w http.ResponseWriter, r *http.Reques
 }
 func (h *AppHandler) SeachingProd(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	query := r.URL.Query().Get("query")
-	if query == "" {
+	queryLower := r.URL.Query().Get("query")
+	if queryLower == "" {
 		utils.SendJSONError(w, "Thiếu query", http.StatusBadRequest)
 		return
 	}
-
-	queryLower := strings.ToLower(query)
-	cacheKey := "search_" + queryLower
+	query := strings.ToLower(queryLower)
+	cacheKey := "search_" + query
 
 	// Check cache
 	if cachedData, found := db.MyCache.Get(cacheKey); found {
@@ -194,7 +193,11 @@ func (h *AppHandler) SeachingProd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	iter := h.DB.Collection("products").Documents(r.Context())
+	iter := h.DB.Collection("products").
+		//Where("name_lowercase", ">=", query).
+		//Where("name_lowercase", "<", query+"\uf8ff").
+		Limit(20). // Chỉ lấy 20 thằng thôi, không ai xem hết 1000 món một lúc
+		Documents(r.Context())
 	defer iter.Stop()
 	var prods []models.Product
 	for {
@@ -215,13 +218,14 @@ func (h *AppHandler) SeachingProd(w http.ResponseWriter, r *http.Request) {
 		p.ID = doc.Ref.ID
 
 		// Find products where name or brand contains the query constraint
-		if strings.Contains(strings.ToLower(p.Name), queryLower) || strings.Contains(strings.ToLower(p.Brand), queryLower) {
+		if strings.Contains(strings.ToLower(p.Name), query) ||
+			strings.Contains(strings.ToLower(p.Brand), query) ||
+			strings.Contains(strings.ToLower(p.Type), query) {
 			prods = append(prods, p)
 		}
 	}
-
+	db.AddSuggestion(query)
 	// Save to cache
-	db.MyCache.Set(cacheKey, prods, 5*time.Minute)
-
+	db.MyCache.Set(cacheKey, prods, 10*time.Minute)
 	utils.SendJSONSuccess(w, prods, http.StatusOK)
 }

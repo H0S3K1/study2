@@ -22,6 +22,7 @@ func main() {
 		log.Fatalf("Lỗi kết nối Firestore: %v", err)
 	}
 	defer client.Close()
+	db.InitRedis()
 
 	// 2. "Tiêm" (Inject) cái client và app vào AppHandler
 	app := &handler.AppHandler{
