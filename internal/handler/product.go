@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 	"study2/internal/models" // Nhớ check lại đường dẫn import của ông
 	"study2/internal/utils"
 
@@ -145,4 +146,43 @@ func (h *AppHandler) GetProductByIDHandler(w http.ResponseWriter, r *http.Reques
 
 	product.ID = docSnap.Ref.ID
 	utils.SendJSONSuccess(w, product, http.StatusOK)
+}
+func (h *AppHandler) SeachingProd(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	query := r.URL.Query().Get("query")
+	if query == "" {
+		utils.SendJSONError(w, "Thiếu query", http.StatusBadRequest)
+		return
+	}
+
+	queryLower := strings.ToLower(query)
+	var products []models.Product
+
+	iter := h.DB.Collection("products").Documents(r.Context())
+	defer iter.Stop()
+
+	for {
+		doc, err := iter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			utils.SendJSONError(w, "Lỗi truy vấn dữ liệu", http.StatusInternalServerError)
+			return
+		}
+
+		var p models.Product
+		if err := doc.DataTo(&p); err != nil {
+			log.Printf("Lỗi map dữ liệu: %v", err)
+			continue
+		}
+		p.ID = doc.Ref.ID
+
+		// Find products where name or brand contains the query constraint
+		if strings.Contains(strings.ToLower(p.Name), queryLower) || strings.Contains(strings.ToLower(p.Brand), queryLower) {
+			products = append(products, p)
+		}
+	}
+
+	utils.SendJSONSuccess(w, products, http.StatusOK)
 }

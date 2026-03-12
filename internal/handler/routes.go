@@ -30,6 +30,7 @@ func (h *AppHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /register", h.RegisterHandler)
 	mux.HandleFunc("GET /products", h.GetProductHandler)
 	mux.HandleFunc("GET /products/{id}", h.GetProductByIDHandler)
+	mux.HandleFunc("POST /search", h.SeachingProd)
 
 	// Protected Group
 	protected("POST /products/filter", h.GetProductsByFilter)
