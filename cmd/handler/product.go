@@ -7,17 +7,15 @@ import (
 	"net/http"
 	"strings"
 	"study2/cmd/db"
-	"study2/cmd/models" // Nhớ check lại đường dẫn import của ông
+	"study2/cmd/models"
 	"study2/cmd/utils"
 	"time"
 
-	"cloud.google.com/go/firestore"
 	"google.golang.org/api/iterator"
 )
 
 func (h *AppHandler) GetProductsByFilter(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	var prodID []string
 	var payload models.ProductFilter
 
 	// 1. Decode and Validate Input
@@ -30,120 +28,43 @@ func (h *AppHandler) GetProductsByFilter(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// 2. Build the COMPLETE Cache Key first
+	// 2. Build cache key
 	lastDocID := r.URL.Query().Get("lastDocID")
 	cacheKey := fmt.Sprintf("filter:last:%s:brands:%v:types:%v:min:%d:max:%d",
 		lastDocID, payload.Brands, payload.Type, payload.MinPrice, payload.MaxPrice)
 
-	// 3. Check Cache (Hit)
-	var total []models.Product
+	// 3. Cache Hit — reconstruct product list from stored IDs
 	if cachedData, found := db.MyCache.Get(cacheKey); found {
-		prodID = cachedData.([]string)
-		
-		var missingIDs []string
-		for _, id := range prodID {
-			if p, found := db.MyCache.Get("prod:" + id); found {
-				total = append(total, p.(models.Product))
-			} else {
-				missingIDs = append(missingIDs, id)
-			}
+		prodIDs := cachedData.([]string)
+		products, err := h.Repo.FetchByIDs(r.Context(), prodIDs)
+		if err != nil {
+			utils.SendJSONError(w, "Lỗi lấy dữ liệu sản phẩm", http.StatusInternalServerError)
+			return
 		}
-
-		if len(missingIDs) > 0 {
-			// Fetch only the missing documents
-			var docRefs []*firestore.DocumentRef
-			for _, id := range missingIDs {
-				docRefs = append(docRefs, h.DB.Collection("products").Doc(id))
-			}
-			
-			docs, err := h.DB.GetAll(r.Context(), docRefs)
-			if err == nil {
-				for _, doc := range docs {
-					if doc.Exists() {
-						var p models.Product
-						doc.DataTo(&p)
-						p.ID = doc.Ref.ID
-						total = append(total, p)
-						db.MyCache.Set("prod:"+p.ID, p, 5*time.Hour)
-					}
-				}
-			}
-		}
-		
-		json.NewEncoder(w).Encode(total)
+		json.NewEncoder(w).Encode(products)
 		return
 	}
 
-	// 4. Cache Miss - Build Firestore Query
-	limit := 100
-	q := h.DB.Collection("products").OrderBy("price", firestore.Asc).Limit(limit)
-
-	// Handle Pagination Marker
-	if lastDocID != "" {
-		docSnap, err := h.DB.Collection("products").Doc(lastDocID).Get(r.Context())
-		if err == nil {
-			q = q.StartAfter(docSnap)
-		}
+	// 4. Cache Miss — query Firestore via repository
+	products, err := h.Repo.FetchByFilter(r.Context(), payload, lastDocID, 100)
+	if err != nil {
+		utils.SendJSONError(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
-	// Add Filters
-	if len(payload.Brands) > 0 && payload.Brands[0] != "" {
-		q = q.Where("brand", "in", payload.Brands)
+	// 5. Cache result IDs and return
+	var ids []string
+	for _, p := range products {
+		ids = append(ids, p.ID)
 	}
-	if len(payload.Type) > 0 && payload.Type[0] != "" {
-		q = q.Where("type", "in", payload.Type)
-	}
-	if payload.MinPrice > 0 {
-		q = q.Where("price", ">=", payload.MinPrice)
-	}
-	if payload.MaxPrice > 0 {
-		q = q.Where("price", "<=", payload.MaxPrice)
-	}
-
-	// 5. Execute Query
-	iter := q.Documents(r.Context())
-	defer iter.Stop()
-
-	var newProdIDs []string
-	for {
-		doc, err := iter.Next()
-		if err == iterator.Done {
-			break
-		}
-		if err != nil {
-			utils.SendJSONError(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		var p models.Product
-		if err := doc.DataTo(&p); err != nil {
-			continue
-		}
-		p.ID = doc.Ref.ID
-		total = append(total, p)
-		newProdIDs = append(newProdIDs, p.ID)
-		
-		// Fill the individual product cache
-		db.MyCache.Set("prod:"+p.ID, p, 5*time.Hour)
-	}
-
-	// 6. Save exactly to Cache and Return
-	db.MyCache.Set(cacheKey, newProdIDs, 5*time.Hour)
-	db.AddSuggestion(cacheKey)
-	json.NewEncoder(w).Encode(total)
+	db.MyCache.Set(cacheKey, ids, 5*time.Hour)
+	json.NewEncoder(w).Encode(products)
 }
 
 func (h *AppHandler) GetProductHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	var products []models.Product
-	var uniqueBrands []string
-	brandMap := make(map[string]bool)
 
-	limit := 20
 	lastDocID := r.URL.Query().Get("lastDocID")
-	// brands := r.URL.Query().Get("brands")
-
-	// Create a unique cache key for this page
 	cacheKey := "products_page_"
 	if lastDocID != "" {
 		cacheKey += lastDocID
@@ -151,114 +72,51 @@ func (h *AppHandler) GetProductHandler(w http.ResponseWriter, r *http.Request) {
 		cacheKey += "first"
 	}
 
-	// Check the cache
+	// Cache Hit
 	if cachedData, found := db.MyCache.Get(cacheKey); found {
 		cacheMap := cachedData.(map[string]interface{})
 		prodIDs := cacheMap["ids"].([]string)
-		uniqueBrands = cacheMap["brands"].([]string)
+		uniqueBrands := cacheMap["brands"].([]string)
 
-		var missingIDs []string
-		for _, id := range prodIDs {
-			if p, found := db.MyCache.Get("prod:" + id); found {
-				products = append(products, p.(models.Product))
-			} else {
-				missingIDs = append(missingIDs, id)
-			}
+		products, err := h.Repo.FetchByIDs(r.Context(), prodIDs)
+		if err != nil {
+			utils.SendJSONError(w, "Lỗi lấy dữ liệu sản phẩm", http.StatusInternalServerError)
+			return
 		}
-
-		if len(missingIDs) > 0 {
-			// Fetch only the missing documents
-			var docRefs []*firestore.DocumentRef
-			for _, id := range missingIDs {
-				docRefs = append(docRefs, h.DB.Collection("products").Doc(id))
-			}
-			
-			docs, err := h.DB.GetAll(r.Context(), docRefs)
-			if err == nil {
-				for _, doc := range docs {
-					if doc.Exists() {
-						var p models.Product
-						doc.DataTo(&p)
-						p.ID = doc.Ref.ID
-						products = append(products, p)
-						db.MyCache.Set("prod:"+p.ID, p, 5*time.Hour)
-					}
-				}
-			}
-		}
-
-		response := map[string]interface{}{
+		utils.SendJSONSuccess(w, map[string]interface{}{
 			"products": products,
 			"brands":   uniqueBrands,
-		}
-		utils.SendJSONSuccess(w, response, http.StatusOK)
+		}, http.StatusOK)
 		return
 	}
 
-	q := h.DB.Collection("products").OrderBy("price", firestore.Asc).Limit(limit)
-
-	if lastDocID != "" {
-		docSnap, err := h.DB.Collection("products").Doc(lastDocID).Get(r.Context())
-		if err == nil {
-			q = q.StartAfter(docSnap)
-		}
+	// Cache Miss — fetch from Firestore via repository
+	products, brands, err := h.Repo.FetchPage(r.Context(), lastDocID, 20)
+	if err != nil {
+		utils.SendJSONError(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
-	// 3. Sử dụng h.DB thay vì biến client vô danh
-	iter := q.Documents(r.Context())
-
-	for {
-		doc, err := iter.Next()
-		if err == iterator.Done {
-			break
-		}
-		if err != nil {
-			utils.SendJSONError(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		var p models.Product
-		if err := doc.DataTo(&p); err != nil {
-			log.Printf("Lỗi map dữ liệu: %v", err)
-			continue
-		}
-		p.ID = doc.Ref.ID
-		products = append(products, p)
-
-		if p.Brand != "" && !brandMap[p.Brand] {
-			brandMap[p.Brand] = true
-			uniqueBrands = append(uniqueBrands, p.Brand)
-		}
-	}
-
-	// Save products to individual cache and build IDs array
-	var storedIDs []string
-	for _, p := range products {
-		storedIDs = append(storedIDs, p.ID)
-		db.MyCache.Set("prod:"+p.ID, p, 5*time.Hour)
-	}
-
-	// Save to cache before returning
-	if uniqueBrands == nil {
-		uniqueBrands = []string{}
+	if brands == nil {
+		brands = []string{}
 	}
 	if products == nil {
 		products = []models.Product{}
 	}
 
-	response := map[string]interface{}{
-		"products": products,
-		"brands":   uniqueBrands,
+	var storedIDs []string
+	for _, p := range products {
+		storedIDs = append(storedIDs, p.ID)
 	}
-
-	cacheStorage := map[string]interface{}{
+	db.MyCache.Set(cacheKey, map[string]interface{}{
 		"ids":    storedIDs,
-		"brands": uniqueBrands,
-	}
+		"brands": brands,
+	}, 5*time.Hour)
 
-	db.MyCache.Set(cacheKey, cacheStorage, 5*time.Hour)
-	db.AddSuggestion(cacheKey)
-	utils.SendJSONSuccess(w, response, http.StatusOK)
+	utils.SendJSONSuccess(w, map[string]interface{}{
+		"products": products,
+		"brands":   brands,
+	}, http.StatusOK)
 }
 
 func (h *AppHandler) GetProductByIDHandler(w http.ResponseWriter, r *http.Request) {
@@ -295,9 +153,9 @@ func (h *AppHandler) GetProductByIDHandler(w http.ResponseWriter, r *http.Reques
 
 	// Save to cache
 	db.MyCache.Set(cacheKey, product, 5*time.Minute)
-
 	utils.SendJSONSuccess(w, product, http.StatusOK)
 }
+
 func (h *AppHandler) SeachingProd(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	queryLower := r.URL.Query().Get("query")
@@ -315,11 +173,10 @@ func (h *AppHandler) SeachingProd(w http.ResponseWriter, r *http.Request) {
 	}
 
 	iter := h.DB.Collection("products").
-		//Where("name_lowercase", ">=", query).
-		//Where("name_lowercase", "<", query+"\uf8ff").
-		Limit(20). // Chỉ lấy 20 thằng thôi, không ai xem hết 1000 món một lúc
+		Limit(20).
 		Documents(r.Context())
 	defer iter.Stop()
+
 	var prods []models.Product
 	for {
 		doc, err := iter.Next()
@@ -345,8 +202,9 @@ func (h *AppHandler) SeachingProd(w http.ResponseWriter, r *http.Request) {
 			prods = append(prods, p)
 		}
 	}
+
+	// Only track the clean human-readable query as a suggestion
 	db.AddSuggestion(query)
-	// Save to cache
 	db.MyCache.Set(cacheKey, prods, 10*time.Minute)
 	utils.SendJSONSuccess(w, prods, http.StatusOK)
 }

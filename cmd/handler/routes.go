@@ -2,21 +2,20 @@ package handler
 
 import (
 	"net/http"
-	"os"
 	"study2/cmd/middleware"
+	"study2/cmd/repository"
 
 	"cloud.google.com/go/firestore"
 	firebase "firebase.google.com/go/v4"
 )
 
-// Struct trung tâm giữ Client DB và Firebase App
+// AppHandler is the central struct holding all injected dependencies.
 type AppHandler struct {
-	DB  *firestore.Client
-	App *firebase.App
+	DB             *firestore.Client
+	App            *firebase.App
+	FirebaseAPIKey string
+	Repo           *repository.ProductRepository
 }
-
-var frMA = firestore.MergeAll
-var FirebaseAPIKey = os.Getenv("FIREBASE_API_KEY")
 
 // Hàm này là "Sổ hộ khẩu" - Gom hết API vào đây
 func (h *AppHandler) RegisterRoutes(mux *http.ServeMux) {
