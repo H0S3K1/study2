@@ -43,11 +43,6 @@ func (h *AppHandler) GetProductsByFilter(w http.ResponseWriter, r *http.Request)
 	if len(payload.Brands) > 0 && payload.Brands[0] != "" {
 		q = q.Where("brand", "in", payload.Brands)
 	}
-	if payload.CPUs != "" {
-		// Chỉ được dùng 1 toán tử 'IN' trong 1 query.
-		// Nếu đã dùng IN cho brand, thì cpu không được dùng IN nữa. (Phải xử lý bằng code Go như đã bàn)
-		q = q.Where("cpu", "in", payload.CPUs)
-	}
 	if len(payload.Type) > 0 && payload.Type[0] != "" {
 		q = q.Where("type", "in", payload.Type)
 	}
@@ -85,9 +80,12 @@ func (h *AppHandler) GetProductsByFilter(w http.ResponseWriter, r *http.Request)
 func (h *AppHandler) GetProductHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	var products []models.Product
+	var uniqueBrands []string
+	brandMap := make(map[string]bool)
 
 	limit := 20
 	lastDocID := r.URL.Query().Get("lastDocID")
+	// brands := r.URL.Query().Get("brands")
 
 	// Create a unique cache key for this page
 	cacheKey := "products_page_"
@@ -132,12 +130,29 @@ func (h *AppHandler) GetProductHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		p.ID = doc.Ref.ID
 		products = append(products, p)
+
+		if p.Brand != "" && !brandMap[p.Brand] {
+			brandMap[p.Brand] = true
+			uniqueBrands = append(uniqueBrands, p.Brand)
+		}
 	}
 
 	// Save to cache before returning
-	db.MyCache.Set(cacheKey, products, 5*time.Minute)
+	if uniqueBrands == nil {
+		uniqueBrands = []string{}
+	}
+	if products == nil {
+		products = []models.Product{}
+	}
+
+	response := map[string]interface{}{
+		"products": products,
+		"brands":   uniqueBrands,
+	}
+
+	db.MyCache.Set(cacheKey, response, 5*time.Minute)
 	db.AddSuggestion(cacheKey)
-	utils.SendJSONSuccess(w, products, http.StatusOK)
+	utils.SendJSONSuccess(w, response, http.StatusOK)
 }
 
 func (h *AppHandler) GetProductByIDHandler(w http.ResponseWriter, r *http.Request) {

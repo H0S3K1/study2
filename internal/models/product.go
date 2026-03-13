@@ -29,7 +29,6 @@ type Require struct {
 
 type ProductFilter struct {
 	Brands   []string `json:"brands"`
-	CPUs     string   `json:"cpus"`
 	MinPrice int      `json:"min_price" validate:"gte=0"`
 	MaxPrice int      `json:"max_price" validate:"gte=0,gtefield=MinPrice"`
 	Type     []string `json:"type"`
