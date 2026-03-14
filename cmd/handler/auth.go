@@ -17,6 +17,11 @@ func (h *AppHandler) signInURL() string {
 	return fmt.Sprintf("https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=%s", h.FirebaseAPIKey)
 }
 
+// refreshURL builds the Firebase REST refresh token URL using the injected API key.
+func (h *AppHandler) refreshURL() string {
+	return fmt.Sprintf("https://securetoken.googleapis.com/v1/token?key=%s", h.FirebaseAPIKey)
+}
+
 // signUpURL builds the Firebase REST sign-up URL using the injected API key.
 func (h *AppHandler) signUpURL() string {
 	return fmt.Sprintf("https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=%s", h.FirebaseAPIKey)
@@ -49,6 +54,28 @@ func callFirebaseREST(w http.ResponseWriter, url string, payload map[string]inte
 	}
 
 	return true
+}
+func (h *AppHandler) Refresh(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var req models.RefreshRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		utils.SendJSONError(w, "Lỗi cú pháp JSON", http.StatusBadRequest)
+		return
+	}
+	if err := utils.Validate.Struct(req); err != nil {
+		utils.SendJSONError(w, "Vui lòng nhập Refresh Token hợp lệ", http.StatusBadRequest)
+		return
+	}
+	payload := map[string]interface{}{
+		"grant_type":    "refresh_token",
+		"refresh_token": req.RefreshToken,
+	}
+	var refreshResp models.RefreshResponse
+	if !callFirebaseREST(w, h.refreshURL(), payload, &refreshResp, "Refresh token không hợp lệ") {
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(refreshResp)
 }
 
 // LoginHandler xử lý việc đăng nhập của user thông qua Firebase REST API

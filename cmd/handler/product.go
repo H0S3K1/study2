@@ -46,7 +46,7 @@ func (h *AppHandler) GetProductsByFilter(w http.ResponseWriter, r *http.Request)
 	}
 
 	// 4. Cache Miss — query Firestore via repository
-	products, err := h.Repo.FetchByFilter(r.Context(), payload, lastDocID, 100)
+	products, err := h.Repo.FetchByFilter(r.Context(), payload, lastDocID, 20)
 	if err != nil {
 		utils.SendJSONError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -172,9 +172,7 @@ func (h *AppHandler) SeachingProd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	iter := h.DB.Collection("products").
-		Limit(20).
-		Documents(r.Context())
+	iter := h.DB.Collection("products").Documents(r.Context())
 	defer iter.Stop()
 
 	var prods []models.Product
@@ -205,6 +203,6 @@ func (h *AppHandler) SeachingProd(w http.ResponseWriter, r *http.Request) {
 
 	// Only track the clean human-readable query as a suggestion
 	db.AddSuggestion(query)
-	db.MyCache.Set(cacheKey, prods, 10*time.Minute)
+	db.MyCache.Set(cacheKey, prods, 1*time.Hour)
 	utils.SendJSONSuccess(w, prods, http.StatusOK)
 }

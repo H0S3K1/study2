@@ -26,6 +26,7 @@ func (h *AppHandler) RegisterRoutes(mux *http.ServeMux) {
 	}
 	// Public Group
 	mux.HandleFunc("POST /login", h.LoginHandler)
+	mux.HandleFunc("POST /refresh", h.Refresh)
 	mux.HandleFunc("POST /register", h.RegisterHandler)
 	mux.HandleFunc("GET /products", h.GetProductHandler)
 	mux.HandleFunc("GET /products/{id}", h.GetProductByIDHandler)

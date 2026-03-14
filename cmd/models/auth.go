@@ -38,3 +38,16 @@ type UpdateProfileRequest struct {
 	Gender      string `json:"gender,omitempty" validate:"omitempty,oneof=male female other"`
 	PhoneNumber string `json:"phone_number,omitempty" validate:"omitempty,numeric,min=9,max=15"`
 }
+
+type RefreshRequest struct {
+	RefreshToken string `json:"refreshToken" validate:"required"`
+}
+
+type RefreshResponse struct {
+	ExpiresIn    string `json:"expires_in"`
+	TokenType    string `json:"token_type"`
+	RefreshToken string `json:"refresh_token"`
+	IDToken      string `json:"id_token"`
+	UserID       string `json:"user_id"`
+	ProjectID    string `json:"project_id"`
+}
