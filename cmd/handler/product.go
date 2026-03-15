@@ -83,6 +83,7 @@ func (h *AppHandler) GetProductHandler(w http.ResponseWriter, r *http.Request) {
 			utils.SendJSONError(w, "Lỗi lấy dữ liệu sản phẩm", http.StatusInternalServerError)
 			return
 		}
+
 		utils.SendJSONSuccess(w, map[string]interface{}{
 			"products": products,
 			"brands":   uniqueBrands,
