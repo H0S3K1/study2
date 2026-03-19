@@ -32,6 +32,109 @@ func (h *AppHandler) updateURL() string {
 	return fmt.Sprintf("https://identitytoolkit.googleapis.com/v1/accounts:update?key=%s", h.FirebaseAPIKey)
 }
 
+// signInWithIdpURL builds the Firebase REST identity provider sign-in URL.
+func (h *AppHandler) signInWithIdpURL() string {
+	return fmt.Sprintf("https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=%s", h.FirebaseAPIKey)
+}
+
+// SocialLoginHandler xử lý đăng nhập qua Facebook, Google, Apple.
+func (h *AppHandler) SocialLoginHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	var req models.SocialLoginRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		utils.SendJSONError(w, "Lỗi cú pháp JSON", http.StatusBadRequest)
+		return
+	}
+
+	if err := utils.Validate.Struct(req); err != nil {
+		utils.SendJSONError(w, "Vui lòng cung cấp ProviderID", http.StatusBadRequest)
+		return
+	}
+
+	// Prepare payload for signInWithIdp
+	var postBody string
+	if req.IDToken != "" {
+		postBody = fmt.Sprintf("id_token=%s&providerId=%s", req.IDToken, req.ProviderID)
+	} else if req.AccessToken != "" {
+		postBody = fmt.Sprintf("access_token=%s&providerId=%s", req.AccessToken, req.ProviderID)
+	} else {
+		utils.SendJSONError(w, "Vui lòng cung cấp idToken hoặc accessToken", http.StatusBadRequest)
+		return
+	}
+
+	payload := map[string]interface{}{
+		"postBody":           postBody,
+		"requestUri":          "http://localhost", // Mandatory field for Firebase REST API
+		"returnSecureToken":   true,
+		"returnIdpCredential": true,
+	}
+
+	var loginResp models.LoginResponse
+	if !callFirebaseREST(w, h.signInWithIdpURL(), payload, &loginResp, "Xác thực với " + req.ProviderID + " thất bại") {
+		return
+	}
+
+	// Check if this is a new user, then we might want to save profile to Firestore
+	// However, Firebase doesn't directly return if it's a new user here in simple response.
+	// We can check if the user doc exists in Firestore.
+	docRef := h.DB.Collection("users").Doc(loginResp.LocalID)
+	docSnap, err := docRef.Get(r.Context())
+	if err != nil {
+		// If user doesn't exist, create profile
+		_, err = docRef.Set(r.Context(), map[string]interface{}{
+			"email":      loginResp.Email,
+			"created_at": time.Now(),
+			"role":       "customer",
+		})
+		if err != nil {
+			fmt.Printf("Lỗi tạo user profile trong Firestore: %v\n", err)
+		}
+	} else {
+		// Check if email or other info needs update if needed
+		_ = docSnap
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(loginResp)
+}
+
+// GoogleLoginHandler xử lý đăng nhập qua Google.
+func (h *AppHandler) GoogleLoginHandler(w http.ResponseWriter, r *http.Request) {
+	h.SocialLoginWithProvider(w, r, "google.com")
+}
+
+// FacebookLoginHandler xử lý đăng nhập qua Facebook.
+func (h *AppHandler) FacebookLoginHandler(w http.ResponseWriter, r *http.Request) {
+	h.SocialLoginWithProvider(w, r, "facebook.com")
+}
+
+// AppleLoginHandler xử lý đăng nhập qua Apple.
+func (h *AppHandler) AppleLoginHandler(w http.ResponseWriter, r *http.Request) {
+	h.SocialLoginWithProvider(w, r, "apple.com")
+}
+
+// SocialLoginWithProvider là hàm generic hỗ trợ đăng nhập social.
+func (h *AppHandler) SocialLoginWithProvider(w http.ResponseWriter, r *http.Request, providerID string) {
+	w.Header().Set("Content-Type", "application/json")
+
+	var req models.SocialLoginRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		utils.SendJSONError(w, "Lỗi cú pháp JSON", http.StatusBadRequest)
+		return
+	}
+	req.ProviderID = providerID // Override providerID based on route
+
+	loginResp, err := h.AuthRepo.SocialLogin(r.Context(), req)
+	if err != nil {
+		utils.SendJSONError(w, "Xác thực với " + providerID + " thất bại: " + err.Error(), http.StatusUnauthorized)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(loginResp)
+}
+
 // callFirebaseREST is a helper for all Firebase Authentication REST API calls.
 func callFirebaseREST(w http.ResponseWriter, url string, payload map[string]interface{}, successResp interface{}, errorMsg string) bool {
 	payloadBytes, _ := json.Marshal(payload)

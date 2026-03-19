@@ -15,6 +15,7 @@ type AppHandler struct {
 	App            *firebase.App
 	FirebaseAPIKey string
 	Repo           *repository.ProductRepository
+	AuthRepo       *repository.AuthRepository
 }
 
 // Hàm này là "Sổ hộ khẩu" - Gom hết API vào đây
@@ -26,6 +27,9 @@ func (h *AppHandler) RegisterRoutes(mux *http.ServeMux) {
 	}
 	// Public Group
 	mux.HandleFunc("POST /login", h.LoginHandler)
+	mux.HandleFunc("POST /login/google", h.GoogleLoginHandler)
+	mux.HandleFunc("POST /login/facebook", h.FacebookLoginHandler)
+	mux.HandleFunc("POST /login/apple", h.AppleLoginHandler)
 	mux.HandleFunc("POST /refresh", h.Refresh)
 	mux.HandleFunc("POST /register", h.RegisterHandler)
 	mux.HandleFunc("GET /products", h.GetProductHandler)

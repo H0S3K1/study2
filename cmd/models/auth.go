@@ -51,3 +51,9 @@ type RefreshResponse struct {
 	UserID       string `json:"user_id"`
 	ProjectID    string `json:"project_id"`
 }
+
+type SocialLoginRequest struct {
+	IDToken    string `json:"idToken"`
+	AccessToken string `json:"accessToken"`
+	ProviderID string `json:"providerId" validate:"required"`
+}

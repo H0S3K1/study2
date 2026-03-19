@@ -25,8 +25,9 @@ func main() {
 	defer client.Close()
 	db.InitRedis()
 
-	// 2. Construct ProductRepository
+	// 2. Construct Repositories
 	productRepo := &repository.ProductRepository{DB: client}
+	authRepo := &repository.AuthRepository{DB: client, FirebaseAPIKey: os.Getenv("FIREBASE_API_KEY")}
 
 	// 3. Inject all dependencies into AppHandler
 	app := &handler.AppHandler{
@@ -34,6 +35,7 @@ func main() {
 		App:            firebaseApp,
 		FirebaseAPIKey: os.Getenv("FIREBASE_API_KEY"),
 		Repo:           productRepo,
+		AuthRepo:       authRepo,
 	}
 
 	mux := http.NewServeMux()
