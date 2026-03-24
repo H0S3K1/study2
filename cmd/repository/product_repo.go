@@ -99,7 +99,7 @@ func (r *ProductRepository) FetchPage(ctx context.Context, lastDocID string, lim
 
 // FetchByFilter retrieves products matching the given filter, with cursor pagination.
 func (r *ProductRepository) FetchByFilter(ctx context.Context, filter models.ProductFilter, lastDocID string, limit int) ([]models.Product, error) {
-	q := r.DB.Collection("products").OrderBy("price", firestore.Asc).Limit(limit)
+	q := r.DB.Collection("products").Limit(limit)
 
 	if lastDocID != "" {
 		docSnap, err := r.DB.Collection("products").Doc(lastDocID).Get(ctx)

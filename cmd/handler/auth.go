@@ -8,34 +8,8 @@ import (
 	"study2/cmd/models"
 	"study2/cmd/utils"
 	"time"
-
 	"cloud.google.com/go/firestore"
 )
-
-// signInURL builds the Firebase REST sign-in URL using the injected API key.
-func (h *AppHandler) signInURL() string {
-	return fmt.Sprintf("https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=%s", h.FirebaseAPIKey)
-}
-
-// refreshURL builds the Firebase REST refresh token URL using the injected API key.
-func (h *AppHandler) refreshURL() string {
-	return fmt.Sprintf("https://securetoken.googleapis.com/v1/token?key=%s", h.FirebaseAPIKey)
-}
-
-// signUpURL builds the Firebase REST sign-up URL using the injected API key.
-func (h *AppHandler) signUpURL() string {
-	return fmt.Sprintf("https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=%s", h.FirebaseAPIKey)
-}
-
-// updateURL builds the Firebase REST account update URL using the injected API key.
-func (h *AppHandler) updateURL() string {
-	return fmt.Sprintf("https://identitytoolkit.googleapis.com/v1/accounts:update?key=%s", h.FirebaseAPIKey)
-}
-
-// signInWithIdpURL builds the Firebase REST identity provider sign-in URL.
-func (h *AppHandler) signInWithIdpURL() string {
-	return fmt.Sprintf("https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=%s", h.FirebaseAPIKey)
-}
 
 // SocialLoginHandler xử lý đăng nhập qua Facebook, Google, Apple.
 func (h *AppHandler) SocialLoginHandler(w http.ResponseWriter, r *http.Request) {
@@ -64,14 +38,14 @@ func (h *AppHandler) SocialLoginHandler(w http.ResponseWriter, r *http.Request) 
 	}
 
 	payload := map[string]interface{}{
-		"postBody":           postBody,
+		"postBody":            postBody,
 		"requestUri":          "http://localhost", // Mandatory field for Firebase REST API
 		"returnSecureToken":   true,
 		"returnIdpCredential": true,
 	}
 
-	var loginResp models.LoginResponse
-	if !callFirebaseREST(w, h.signInWithIdpURL(), payload, &loginResp, "Xác thực với " + req.ProviderID + " thất bại") {
+	var loginResp models.AuthResponse
+	if !callFirebaseREST(w, h.signInWithIdpURL(), payload, &loginResp, "Xác thực với "+req.ProviderID+" thất bại") {
 		return
 	}
 
@@ -99,21 +73,6 @@ func (h *AppHandler) SocialLoginHandler(w http.ResponseWriter, r *http.Request) 
 	json.NewEncoder(w).Encode(loginResp)
 }
 
-// GoogleLoginHandler xử lý đăng nhập qua Google.
-func (h *AppHandler) GoogleLoginHandler(w http.ResponseWriter, r *http.Request) {
-	h.SocialLoginWithProvider(w, r, "google.com")
-}
-
-// FacebookLoginHandler xử lý đăng nhập qua Facebook.
-func (h *AppHandler) FacebookLoginHandler(w http.ResponseWriter, r *http.Request) {
-	h.SocialLoginWithProvider(w, r, "facebook.com")
-}
-
-// AppleLoginHandler xử lý đăng nhập qua Apple.
-func (h *AppHandler) AppleLoginHandler(w http.ResponseWriter, r *http.Request) {
-	h.SocialLoginWithProvider(w, r, "apple.com")
-}
-
 // SocialLoginWithProvider là hàm generic hỗ trợ đăng nhập social.
 func (h *AppHandler) SocialLoginWithProvider(w http.ResponseWriter, r *http.Request, providerID string) {
 	w.Header().Set("Content-Type", "application/json")
@@ -127,7 +86,7 @@ func (h *AppHandler) SocialLoginWithProvider(w http.ResponseWriter, r *http.Requ
 
 	loginResp, err := h.AuthRepo.SocialLogin(r.Context(), req)
 	if err != nil {
-		utils.SendJSONError(w, "Xác thực với " + providerID + " thất bại: " + err.Error(), http.StatusUnauthorized)
+		utils.SendJSONError(w, "Xác thực với "+providerID+" thất bại: "+err.Error(), http.StatusUnauthorized)
 		return
 	}
 
@@ -202,7 +161,7 @@ func (h *AppHandler) LoginHandler(w http.ResponseWriter, r *http.Request) {
 		"returnSecureToken": true,
 	}
 
-	var loginResp models.LoginResponse
+	var loginResp models.AuthResponse
 	if !callFirebaseREST(w, h.signInURL(), payload, &loginResp, "Sai email hoặc mật khẩu") {
 		return
 	}
@@ -232,7 +191,7 @@ func (h *AppHandler) RegisterHandler(w http.ResponseWriter, r *http.Request) {
 		"returnSecureToken": true,
 	}
 
-	var regResp models.RegisterResponse
+	var regResp models.AuthResponse
 	if !callFirebaseREST(w, h.signUpURL(), payload, &regResp, "Đăng ký thất bại (có thể email đã được sử dụng)") {
 		return
 	}
@@ -289,7 +248,7 @@ func (h *AppHandler) EditProfileHandler(w http.ResponseWriter, r *http.Request) 
 		payload["password"] = req.Password
 	}
 
-	var updateResp models.RegisterResponse
+	var updateResp models.AuthResponse
 	if !callFirebaseREST(w, h.updateURL(), payload, &updateResp, "Thay đổi thất bại (token có thể đã hết hạn hoặc email đã được dùng)") {
 		return
 	}
