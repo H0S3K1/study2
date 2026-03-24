@@ -16,9 +16,51 @@ type AuthRepository struct {
 	FirebaseAPIKey string
 }
 
-func (r *AuthRepository) Login(ctx context.Context, req models.LoginRequest) (models.AuthResponse, error) {
+
+func (r *AuthRepository) Create(ctx context.Context,userID, email string) (models.AuthResponse, error) {
+	docRef := r.DB.Collection("users").Doc(userID)
+	_, err := docRef.Get(ctx)
+	if err != nil {
+		_, err = docRef.Set(ctx, map[string]interface{}{
+			"email":      email,
+			"created_at": time.Now(),
+			"role":       "customer",
+		})
+		if err != nil {
+			return models.AuthResponse{}, err
+		}
+	}
+	docRef.Set(ctx, map[string]interface{}{"email": email, "updated_at": time.Now(), "role": "customer"})
+	return models.AuthResponse{} , nil
+}
+
+func (r *AuthRepository) Login(ctx context.Context, req models.AuthRequest) (models.AuthResponse, error) {
 	var resp models.AuthResponse
 	return resp, nil
+}
+func (r *AuthRepository) Update(ctx context.Context, req models.ProfileRequest , uid string) (models.AuthResponse, error) {
+	update := []firestore.Update{}
+	if req.Name != "" {
+		update = append(update, firestore.Update{Path: "name", Value: req.Name})
+	}
+	if req.Age != 0 {
+		update = append(update, firestore.Update{Path: "age", Value: req.Age})
+	}
+	if req.Address != "" {
+		update = append(update, firestore.Update{Path: "address", Value: req.Address})
+	}
+	if req.Gender != "" {
+		update = append(update, firestore.Update{Path: "gender", Value: req.Gender})
+	}
+	if req.PhoneNumber != "" {
+		update = append(update, firestore.Update{Path: "phone_number", Value: req.PhoneNumber})
+	}
+	if len(update) == 0 {
+		return models.AuthResponse{}, nil
+	}
+	update = append(update, firestore.Update{Path: "updated_at", Value: time.Now()})
+	_,err := r.DB.Collection("users").Doc(uid).Update(ctx, update)
+	return models.AuthResponse{}, err
 }
 
 func (r *AuthRepository) SocialLogin(ctx context.Context, req models.SocialLoginRequest) (models.AuthResponse, error) {
@@ -33,7 +75,7 @@ func (r *AuthRepository) SocialLogin(ctx context.Context, req models.SocialLogin
 
 	url := fmt.Sprintf("https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=%s", r.FirebaseAPIKey)
 	payload := map[string]interface{}{
-		"postBody":           postBody,
+		"postBody":            postBody,
 		"requestUri":          "http://localhost",
 		"returnSecureToken":   true,
 		"returnIdpCredential": true,

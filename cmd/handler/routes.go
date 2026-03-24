@@ -38,7 +38,6 @@ func (h *AppHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /products/filter", h.GetProductsByFilter)
 
 	// Protected Group
-	protected("PUT /profile", h.EditProfileHandler)
 	protected("GET /profile", h.GetProfileHandler)
 	protected("POST /profile/update", h.UpdateProfileHandler)
 	protected("POST /logout", h.LogoutHandler)

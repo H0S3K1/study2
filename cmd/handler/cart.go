@@ -2,9 +2,12 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"study2/cmd/db"
 	"study2/cmd/models" // Nhớ check lại đường dẫn import của ông
 	"study2/cmd/utils"
+	"time"
 
 	"cloud.google.com/go/firestore"
 )
@@ -55,6 +58,7 @@ func (h *AppHandler) AddToCart(w http.ResponseWriter, r *http.Request) {
 
 	// 6. Thêm vào sub-collection "cart" (tự động tạo mới nếu chưa có)
 	cartRef := h.DB.Collection("users").Doc(uid).Collection("cart").Doc(req.ProductID)
+	h.clearCartCache(uid, r)
 	_, err = cartRef.Set(ctx, cartItem)
 	if err != nil {
 		utils.SendJSONError(w, "Lỗi cập nhật giỏ hàng", http.StatusInternalServerError)
@@ -84,6 +88,7 @@ func (h *AppHandler) RemoveFromCart(w http.ResponseWriter, r *http.Request) {
 
 	cartRef := h.DB.Collection("users").Doc(uid).Collection("cart").Doc(req.ProductID)
 	_, err := cartRef.Delete(ctx)
+	h.clearCartCache(uid, r)
 
 	if err != nil {
 		utils.SendJSONError(w, "Lỗi xóa sản phẩm khỏi giỏ hàng", http.StatusInternalServerError)
@@ -112,13 +117,15 @@ func (h *AppHandler) UpdateCart(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cartRef := h.DB.Collection("users").Doc(uid).Collection("cart").Doc(req.ProductID)
+	
+	h.clearCartCache(uid, r)
+	
 	_, err := cartRef.Update(ctx, []firestore.Update{
 		{
 			Path:  "quantity",
 			Value: req.Quantity,
 		},
 	})
-
 	if err != nil {
 		utils.SendJSONError(w, "Sản phẩm không có trong giỏ hàng hoặc lỗi cập nhật", http.StatusInternalServerError)
 		return
@@ -134,6 +141,13 @@ func (h *AppHandler) GetCart(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	uid := ctx.Value("user_id").(string)
 
+	cacheKey := fmt.Sprintf("cart:%s", uid)
+	cachedCart, err := db.RDB.Get(r.Context(), cacheKey).Result()
+	if err == nil {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(cachedCart))
+		return
+	}
 	cartRef := h.DB.Collection("users").Doc(uid).Collection("cart")
 	docSnaps, err := cartRef.Documents(ctx).GetAll()
 	if err != nil {
@@ -153,7 +167,11 @@ func (h *AppHandler) GetCart(w http.ResponseWriter, r *http.Request) {
 	if cart == nil {
 		cart = []models.CartItem{}
 	}
-
+	cartJson, err := json.Marshal(cart)
+	db.RDB.Set(r.Context(), cacheKey, cartJson, 10*time.Minute)
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(cart)
+}
+func (h *AppHandler) clearCartCache(uid string, r *http.Request) {
+	db.RDB.Del(r.Context(), fmt.Sprintf("cart:%s", uid))
 }

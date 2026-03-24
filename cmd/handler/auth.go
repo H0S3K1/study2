@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"study2/cmd/models"
 	"study2/cmd/utils"
+	"strings"
 	"time"
-	"cloud.google.com/go/firestore"
 )
 
 // SocialLoginHandler xử lý đăng nhập qua Facebook, Google, Apple.
@@ -119,7 +119,7 @@ func callFirebaseREST(w http.ResponseWriter, url string, payload map[string]inte
 }
 func (h *AppHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	var req models.RefreshRequest
+	var req models.RefreshResponse
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		utils.SendJSONError(w, "Lỗi cú pháp JSON", http.StatusBadRequest)
 		return
@@ -144,7 +144,7 @@ func (h *AppHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 func (h *AppHandler) LoginHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	var req models.LoginRequest
+	var req models.AuthRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		utils.SendJSONError(w, "Lỗi cú pháp JSON", http.StatusBadRequest)
 		return
@@ -174,7 +174,7 @@ func (h *AppHandler) LoginHandler(w http.ResponseWriter, r *http.Request) {
 func (h *AppHandler) RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	var req models.RegisterRequest
+	var req models.AuthRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		utils.SendJSONError(w, "Lỗi cú pháp JSON", http.StatusBadRequest)
 		return
@@ -197,11 +197,7 @@ func (h *AppHandler) RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Save user profile to Firestore using the UID as document ID
-	_, err := h.DB.Collection("users").Doc(regResp.LocalID).Set(r.Context(), map[string]interface{}{
-		"email":      regResp.Email,
-		"created_at": time.Now(),
-		"role":       "customer",
-	})
+	regResp, err := h.AuthRepo.Create(r.Context(),regResp.LocalID, req.Email)
 	if err != nil {
 		// Firebase Auth already created the account; log the DB error but don't block the response
 		fmt.Printf("Lỗi tạo user profile trong Firestore: %v\n", err)
@@ -211,50 +207,54 @@ func (h *AppHandler) RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(regResp)
 }
 
+
+
 // EditProfileHandler xử lý việc đổi mật khẩu hoặc email của user đang đăng nhập
-func (h *AppHandler) EditProfileHandler(w http.ResponseWriter, r *http.Request) {
+func (h *AppHandler) UpdateProfileHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	userID, _ := r.Context().Value("user_id").(string)
 
-	authHeader := r.Header.Get("Authorization")
-	idToken := ""
-	if len(authHeader) > 7 && authHeader[:7] == "Bearer " {
-		idToken = authHeader[7:]
-	}
-
-	var req models.EditProfileRequest
+	var req models.AuthRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		utils.SendJSONError(w, "Lỗi cú pháp JSON", http.StatusBadRequest)
+		utils.SendJSONError(w, "Lỗi JSON", http.StatusBadRequest)
 		return
 	}
 
-	if err := utils.Validate.Struct(req); err != nil {
-		utils.SendJSONError(w, "Dữ liệu không hợp lệ", http.StatusBadRequest)
+	// 1. Update Firebase Auth (Email/Password) if provided
+	if req.Email != "" || req.Password != "" {
+		authHeader := r.Header.Get("Authorization")
+		idToken := strings.TrimPrefix(authHeader, "Bearer ")
+
+		payload := map[string]interface{}{
+			"idToken":           idToken,
+			"returnSecureToken": true,
+		}
+		if req.Email != "" {
+			payload["email"] = req.Email
+		}
+		if req.Password != "" {
+			payload["password"] = req.Password
+		}
+
+		var authResp models.AuthResponse
+		if !callFirebaseREST(w, h.updateURL(), payload, &authResp, "Cập nhật Firebase Auth thất bại") {
+			return
+		}
+	}
+
+	// 2. Update Firestore Profile (Name, Age, etc.)
+	var reqs models.ProfileRequest
+	if err := json.NewDecoder(r.Body).Decode(&reqs); err != nil {
+		utils.SendJSONError(w, "Lỗi JSON", http.StatusBadRequest)
+		return
+	}
+	_,err := h.AuthRepo.Update(r.Context(),reqs , userID)
+	if err != nil {
+		utils.SendJSONError(w, "Cập nhật Firestore thất bại", http.StatusInternalServerError)
 		return
 	}
 
-	if req.Email == "" && req.Password == "" {
-		utils.SendJSONError(w, "Bạn chưa nhập Email hay Password mới nào để đổi", http.StatusBadRequest)
-		return
-	}
-
-	payload := map[string]interface{}{
-		"idToken":           idToken,
-		"returnSecureToken": true,
-	}
-	if req.Email != "" {
-		payload["email"] = req.Email
-	}
-	if req.Password != "" {
-		payload["password"] = req.Password
-	}
-
-	var updateResp models.AuthResponse
-	if !callFirebaseREST(w, h.updateURL(), payload, &updateResp, "Thay đổi thất bại (token có thể đã hết hạn hoặc email đã được dùng)") {
-		return
-	}
-
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(updateResp)
+	utils.SendJSONSuccess(w, map[string]string{"message": "Cập nhật thành công"}, http.StatusOK)
 }
 
 // GetProfileHandler lấy thông tin profile của user từ Firestore
@@ -281,78 +281,6 @@ func (h *AppHandler) GetProfileHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(user)
-}
-
-// UpdateProfileHandler cập nhật thông tin cá nhân của user trong Firestore
-func (h *AppHandler) UpdateProfileHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	ctx := r.Context()
-
-	userID, ok := ctx.Value("user_id").(string)
-	if !ok || userID == "" {
-		utils.SendJSONError(w, "Không lấy được thông tin xác thực", http.StatusUnauthorized)
-		return
-	}
-
-	var req models.UpdateProfileRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		utils.SendJSONError(w, "Lỗi cú pháp JSON", http.StatusBadRequest)
-		return
-	}
-	if err := utils.Validate.Struct(req); err != nil {
-		utils.SendJSONError(w, "Dữ liệu không hợp lệ", http.StatusBadRequest)
-		return
-	}
-
-	docSnap, err := h.DB.Collection("users").Doc(userID).Get(ctx)
-	if err != nil {
-		utils.SendJSONError(w, "Không tìm thấy người dùng", http.StatusNotFound)
-		return
-	}
-
-	currentData := docSnap.Data()
-	updates := make(map[string]interface{})
-	hasChanges := false
-
-	compareAndAdd := func(field string, newValue interface{}) {
-		switch v := newValue.(type) {
-		case string:
-			if v == "" {
-				return
-			}
-		case int:
-			if v == 0 {
-				return
-			}
-		}
-		oldValue, exists := currentData[field]
-		if !exists || oldValue != newValue {
-			hasChanges = true
-			updates[field] = newValue
-		}
-	}
-
-	compareAndAdd("name", req.Name)
-	compareAndAdd("age", req.Age)
-	compareAndAdd("address", req.Address)
-	compareAndAdd("gender", req.Gender)
-	compareAndAdd("phone_number", req.PhoneNumber)
-
-	if !hasChanges {
-		utils.SendJSONError(w, "The update is duplicated (Thông tin không thay đổi)", http.StatusConflict)
-		return
-	}
-
-	_, err = h.DB.Collection("users").Doc(userID).Set(ctx, updates, firestore.MergeAll)
-	if err != nil {
-		utils.SendJSONError(w, "Lỗi cập nhật Firestore", http.StatusInternalServerError)
-		return
-	}
-
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{
-		"message": "Cập nhật hồ sơ thành công",
-	})
 }
 
 // LogoutHandler xử lý logout bằng cách yêu cầu client xóa token
