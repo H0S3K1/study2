@@ -32,5 +32,6 @@ type ProductFilter struct {
 	MinPrice int      `json:"min_price" validate:"gte=0"`
 	MaxPrice int      `json:"max_price" validate:"gte=0,gtefield=MinPrice"`
 	Type     []string `json:"type"`
+	Sort     string   `json:"sort"`
 	// Thêm các trường khác nếu cần
 }

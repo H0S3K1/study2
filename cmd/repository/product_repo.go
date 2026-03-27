@@ -59,55 +59,62 @@ func (r *ProductRepository) FetchByIDs(ctx context.Context, ids []string) ([]mod
 // FetchPage retrieves a paginated list of products ordered by price.
 // It also collects unique brand names from the returned products.
 func (r *ProductRepository) FetchPage(ctx context.Context, lastDocID string, limit int) (products []models.Product, brands []string, err error) {
-	brandMap := make(map[string]bool)
-
 	q := r.DB.Collection("products").OrderBy("price", firestore.Asc).Limit(limit)
 	if lastDocID != "" {
-		docSnap, snapErr := r.DB.Collection("products").Doc(lastDocID).Get(ctx)
-		if snapErr == nil {
+		docSnap, _ := r.DB.Collection("products").Doc(lastDocID).Get(ctx)
+		if docSnap != nil {
 			q = q.StartAfter(docSnap)
 		}
 	}
 
-	iter := q.Documents(ctx)
-	defer iter.Stop()
-
+	pIter := q.Documents(ctx)
+	defer pIter.Stop()
 	for {
-		doc, docErr := iter.Next()
+		doc, docErr := pIter.Next()
 		if docErr == iterator.Done {
 			break
 		}
 		if docErr != nil {
-			err = docErr
-			return
+			return nil, nil, docErr
 		}
-		var p models.Product
-		if mapErr := doc.DataTo(&p); mapErr != nil {
-			continue
-		}
-		p.ID = doc.Ref.ID
-		products = append(products, p)
-		db.MyCache.Set("prod:"+p.ID, p, 5*time.Hour)
 
-		if p.Brand != "" && !brandMap[p.Brand] {
-			brandMap[p.Brand] = true
-			brands = append(brands, p.Brand)
+		var p models.Product
+		if err := doc.DataTo(&p); err == nil {
+			p.ID = doc.Ref.ID
+			products = append(products, p)
 		}
 	}
-	return
+
+	brandMap := make(map[string]bool)
+	allDocsIter := r.DB.Collection("products").Select("brand").Documents(ctx)
+	defer allDocsIter.Stop()
+
+	for {
+		doc, docErr := allDocsIter.Next()
+		if docErr == iterator.Done {
+			break
+		}
+		if docErr != nil {
+			break
+		}
+		data := doc.Data()
+		if bName, ok := data["brand"].(string); ok && bName != "" {
+			if !brandMap[bName] {
+				brandMap[bName] = true
+				brands = append(brands, bName)
+			}
+		}
+	}
+
+	return products, brands, nil
 }
 
 // FetchByFilter retrieves products matching the given filter, with cursor pagination.
 func (r *ProductRepository) FetchByFilter(ctx context.Context, filter models.ProductFilter, lastDocID string, limit int) ([]models.Product, error) {
-	q := r.DB.Collection("products").Limit(limit)
 
-	if lastDocID != "" {
-		docSnap, err := r.DB.Collection("products").Doc(lastDocID).Get(ctx)
-		if err == nil {
-			q = q.StartAfter(docSnap)
-		}
-	}
+	q := r.DB.Collection("products").Query
 
+	// 1. Where filters first
 	if len(filter.Brands) > 0 && filter.Brands[0] != "" {
 		q = q.Where("brand", "in", filter.Brands)
 	}
@@ -120,6 +127,20 @@ func (r *ProductRepository) FetchByFilter(ctx context.Context, filter models.Pro
 	if filter.MaxPrice > 0 {
 		q = q.Where("price", "<=", filter.MaxPrice)
 	}
+	orderDir := firestore.Desc
+	if filter.Sort == "asc" {
+		orderDir = firestore.Asc
+	}
+	q = q.OrderBy("price", orderDir)
+	// 3. Pagination and Limit last
+	if lastDocID != "" {
+		docSnap, err := r.DB.Collection("products").Doc(lastDocID).Get(ctx)
+		if err == nil {
+			q = q.StartAfter(docSnap)
+		}
+	}
+
+	q = q.Limit(limit)
 
 	iter := q.Documents(ctx)
 	defer iter.Stop()

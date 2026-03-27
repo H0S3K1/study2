@@ -30,8 +30,8 @@ func (h *AppHandler) GetProductsByFilter(w http.ResponseWriter, r *http.Request)
 
 	// 2. Build cache key
 	lastDocID := r.URL.Query().Get("lastDocID")
-	cacheKey := fmt.Sprintf("filter:last:%s:brands:%v:types:%v:min:%d:max:%d",
-		lastDocID, payload.Brands, payload.Type, payload.MinPrice, payload.MaxPrice)
+	cacheKey := fmt.Sprintf("filter:last:%s:brands:%v:types:%v:min:%d:max:%d:sort:%s",
+		lastDocID, payload.Brands, payload.Type, payload.MinPrice, payload.MaxPrice, payload.Sort)
 
 	// 3. Cache Hit — reconstruct product list from stored IDs
 	if cachedData, found := db.MyCache.Get(cacheKey); found {
@@ -57,7 +57,7 @@ func (h *AppHandler) GetProductsByFilter(w http.ResponseWriter, r *http.Request)
 	for _, p := range products {
 		ids = append(ids, p.ID)
 	}
-	db.MyCache.Set(cacheKey, ids, 5*time.Hour)
+	db.MyCache.Set(cacheKey, ids, 1*time.Hour)
 	json.NewEncoder(w).Encode(products)
 }
 
@@ -71,7 +71,7 @@ func (h *AppHandler) GetProductHandler(w http.ResponseWriter, r *http.Request) {
 	} else {
 		cacheKey += "first"
 	}
-
+	
 	// Cache Hit
 	if cachedData, found := db.MyCache.Get(cacheKey); found {
 		cacheMap := cachedData.(map[string]interface{})
